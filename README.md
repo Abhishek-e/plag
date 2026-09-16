@@ -10,24 +10,27 @@ A lightweight, user-friendly plagiarism checker for those who may not have acces
 
 > **Note**: While the tool is functional, it is still a simple project, and bugs or issues may be present. I created this to simplify the plagiarism detection process for everyone, so your feedback and suggestions are highly welcome. Feel free to join me in improving the tool.
 
-### **Current Features (v4.0):**
+### **Current Features (v4.1):**
 
-- ✅ **Advanced Plagiarism Detection** - Multi-layer similarity analysis using AI & NLP
-- ✅ **Visual Analytics** - Interactive Chart.js charts showing content originality
-- ✅ **PDF Report Generation** - Download comprehensive plagiarism reports
-- ✅ **Citation Exclusion** - Toggle to exclude quotes and references from analysis
-- ✅ **Dark Mode** - Eye-friendly dark theme with persistent preference
-- ✅ **File Support** - .txt, .doc, .docx, .pdf (up to 10MB)
+- ✅ **Advanced Plagiarism Detection** - Multi-layer similarity analysis using web search & NLP
+- ✅ **AI Content Detection** - Heuristic AI-writing likelihood score, inspired by the techniques Turnitin/GPTZero-style tools publicly describe (perplexity, burstiness, vocabulary richness, stock AI phrasing)
+- ✅ **Visual Analytics** - Interactive Chart.js doughnut chart showing the originality breakdown
+- ✅ **PDF Report Generation** - Download a report with a cover summary, full-text pages with plagiarism/AI highlights, and a matched-sources page
+- ✅ **In-App Highlighted Preview** - See plagiarism/AI-flagged sentences highlighted before downloading
 - ✅ **Modern UI** - Clean, flat design without gradients
 - ✅ **Responsive Design** - Works perfectly on all devices
+
+### **What's New in v4.1:**
+
+- 🤖 **AI Content Detection** - New "AI Content Likelihood" score and per-sentence flags
+- 📄 **Highlighted PDF Pages** - The downloaded report now reproduces your full submission with plagiarized/AI-suspected text highlighted, paginated like a Turnitin originality report
+- 📊 **Updated Chart** - The doughnut chart now breaks content into Original / Plagiarized / AI-Suspected
 
 ### **What's New in v4.0:**
 
 - 🎨 **Redesigned UI** - Modern flat design with better color combinations
 - 📊 **Visual Analytics** - Doughnut charts showing plagiarism distribution
 - 📄 **PDF Reports** - One-click download of detailed analysis reports
-- 🌙 **Dark Mode** - Toggle between light and dark themes
-- 📝 **Quote Exclusion** - Optionally exclude cited text from analysis
 
 
 ### **Why Use Plagiarism Checker?**
@@ -37,10 +40,26 @@ It is a **free** alternative for plagiarism detection, ideal if you don’t have
 
 ### **How It Works:**
 
-1. **Upload Your Document**: Supports **.txt, .doc, .docx, and .pdf.**
+1. **Paste Your Text**: Enter at least 100 characters into the text box.
 2. **Check for Plagiarism**: Click the **"Check Plagiarism"** button to start analyzing your content.
-3. **Review Results**: Highlighted matches will be displayed based on the level of similarity.
-4. **Generate a PDF Report**: Download a detailed report of your results.
+3. **Review Results**: Plagiarism matches and AI-suspected sentences are highlighted based on their score.
+4. **Generate a PDF Report**: Download a report with the highlighted submission included as its own pages.
+
+### **How AI Content Detection Works:**
+
+We don't have access to a proprietary detector model or a paid detection API, so the "AI Content Likelihood"
+score is a transparent, local heuristic rather than a black-box classifier. It combines several signals that
+Turnitin, GPTZero, and similar tools have publicly described using:
+
+- **Perplexity** - how predictable the word choices are, approximated from word-frequency tiers
+- **Burstiness** - how much that predictability varies sentence to sentence (human writing tends to be "burstier")
+- **Vocabulary richness** - type-token ratio across the submission
+- **Sentence-length uniformity** - AI writing tends toward more consistent sentence lengths
+- **Stock AI phrasing** - density of common AI transition phrases (e.g. "furthermore," "delve into," "in conclusion")
+- **Contraction usage** - AI writing skews formal and tends to avoid contractions
+
+These signals are combined into a 0-100 score and a per-sentence flag. It's a statistical estimate meant to
+support human judgment, not a definitive determination — treat it the same way you'd treat any AI detector.
 
 ### **Contributing & Feedback:**
 

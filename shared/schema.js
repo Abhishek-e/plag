@@ -16,10 +16,26 @@ export const sentenceResultSchema = z.object({
   isPlagiarized: z.boolean(),
 });
 
+export const aiSentenceAnalysisSchema = z.object({
+  sentence: z.string(),
+  aiLikelihood: z.number(),
+  isFlaggedAI: z.boolean(),
+});
+
+export const aiAnalysisSchema = z.object({
+  aiScore: z.number(),
+  burstiness: z.number(),
+  avgPerplexity: z.number(),
+  vocabularyRichness: z.number(),
+  aiPhraseCount: z.number(),
+  sentenceAnalysis: z.array(aiSentenceAnalysisSchema),
+});
+
 export const checkResultSchema = z.object({
   overallScore: z.number(),
   plagiarismPercentage: z.number(),
   totalSentences: z.number(),
   plagiarizedSentences: z.number(),
   results: z.array(sentenceResultSchema),
+  aiAnalysis: aiAnalysisSchema,
 });

@@ -6,6 +6,7 @@ import {
   fetchPageContent,
   nGramSimilarity,
 } from "./plagiarism.js";
+import { analyzeAIContent } from "./aiDetection.js";
 
 export function registerRoutes(app) {
   app.post("/api/plagiarism-check", async (req, res) => {
@@ -82,12 +83,18 @@ export function registerRoutes(app) {
 
       console.log("Plagiarism check complete. Overall score:", overallScore);
 
+      // Runs locally over the full text (not the web-search-limited subset
+      // above), so the highlighted report can cover the whole submission.
+      const aiAnalysis = analyzeAIContent(sentences);
+      console.log("AI content analysis complete. AI score:", aiAnalysis.aiScore);
+
       const checkResult = {
         overallScore,
         plagiarismPercentage,
         totalSentences: results.length,
         plagiarizedSentences: plagiarizedCount,
         results,
+        aiAnalysis,
       };
 
       res.json(checkResult);
