@@ -5,12 +5,23 @@
 // probabilities. We don't have access to those model weights or a paid
 // detection API, so this module approximates the same publicly-documented
 // signals those tools describe using cheap, local statistics:
-//   - perplexity (how "predictable" the wording is)
-//   - burstiness (how much that predictability varies sentence to sentence)
-//   - vocabulary richness (type-token ratio)
+//   - burstiness (how much sentence-level "predictability" varies)
+//   - vocabulary richness, measured length-independently (MATTR) so long
+//     documents aren't penalized just for being long
 //   - sentence-length uniformity
 //   - density of stock AI transition phrases ("moreover", "delve into", ...)
-//   - contraction usage (AI writing skews formal / avoids contractions)
+//   - contraction usage (weak signal: AI writing skews formal, but so does
+//     a lot of human formal writing, so this is kept low-weight)
+//
+// Document-level statistics (burstiness, vocabulary richness, length
+// uniformity) are unreliable on short samples — a 3-sentence document
+// doesn't carry enough data for a meaningful variance estimate. Those
+// signals are damped toward a neutral 0.5 when there isn't enough text to
+// trust them, so short inputs lean on the phrase-match signal instead of
+// an overconfident statistical read. This is deliberate: without that
+// damping, short and/or formal human writing (which naturally has low
+// sentence-count burstiness and no contractions) was scoring as "moderate
+// AI likelihood" regardless of content — not a useful signal.
 //
 // The result is a statistical estimate, not a definitive determination —
 // this is surfaced in the UI/report copy, not just here.
@@ -80,6 +91,26 @@ function stdDev(values, avg) {
   return Math.sqrt(variance);
 }
 
+// Moving-average type-token ratio: average lexical diversity across fixed-
+// size windows, instead of one whole-document ratio. Raw whole-document TTR
+// falls mechanically as a document gets longer (more words means more
+// repeats of common terms), which made vocabulary "richness" mostly a proxy
+// for document length rather than for AI-vs-human origin. A sliding window
+// removes that confound. Short documents (under one window) fall back to a
+// plain ratio since there's nothing to slide over.
+function movingAverageTTR(words, windowSize = 50, stride = 10) {
+  if (words.length === 0) return 0;
+  if (words.length <= windowSize) {
+    return new Set(words).size / words.length;
+  }
+  const ratios = [];
+  for (let i = 0; i <= words.length - windowSize; i += stride) {
+    const window = words.slice(i, i + windowSize);
+    ratios.push(new Set(window).size / windowSize);
+  }
+  return mean(ratios);
+}
+
 function countAIPhrases(text) {
   const lower = text.toLowerCase();
   let count = 0;
@@ -119,8 +150,7 @@ export function analyzeAIContent(sentences) {
   const lengthStdDev = stdDev(sentenceLengths, meanLength);
   const lengthVariability = meanLength === 0 ? 0 : lengthStdDev / meanLength;
 
-  const uniqueWords = new Set(totalWords);
-  const vocabularyRichness = uniqueWords.size / totalWords.length;
+  const vocabularyRichness = movingAverageTTR(totalWords);
 
   const aiPhraseCount = countAIPhrases(fullText);
   const phraseDensity = (aiPhraseCount / totalWords.length) * 100;
@@ -130,39 +160,50 @@ export function analyzeAIContent(sentences) {
 
   // Each component is normalized to 0-1, where 1 = "more AI-like".
   const burstinessScore = clamp(1 - burstiness / 0.8, 0, 1);
-  const perplexityScore = 1 - clamp(Math.abs(avgPerplexity - 3.5) / 3.5, 0, 1);
   const lengthUniformityScore = clamp(1 - lengthVariability / 0.6, 0, 1);
-  const vocabRichnessScore = clamp(1 - (vocabularyRichness - 0.4) / 0.4, 0, 1);
+  const vocabRichnessScore = clamp(1 - (vocabularyRichness - 0.45) / 0.35, 0, 1);
   const phraseScore = clamp(phraseDensity / 3, 0, 1);
   const contractionAbsenceScore = clamp(1 - contractionsPerSentence / 0.3, 0, 1);
 
+  // Document-level variance stats need enough sentences to mean anything;
+  // below ~15 sentences, blend them toward a neutral 0.5 rather than let a
+  // noisy estimate swing the score. Contractions need less data to read
+  // (a handful of sentences is enough to notice their total absence).
+  const statReliability = clamp(trimmed.length / 15, 0, 1);
+  const contractionReliability = clamp(trimmed.length / 8, 0, 1);
+  const damp = (score, reliability) => reliability * score + (1 - reliability) * 0.5;
+
+  const burstinessScoreAdj = damp(burstinessScore, statReliability);
+  const lengthUniformityScoreAdj = damp(lengthUniformityScore, statReliability);
+  const vocabRichnessScoreAdj = damp(vocabRichnessScore, statReliability);
+  const contractionAbsenceScoreAdj = damp(contractionAbsenceScore, contractionReliability);
+
   const aiScoreRaw =
-    0.25 * burstinessScore +
-    0.1 * perplexityScore +
-    0.15 * lengthUniformityScore +
-    0.15 * vocabRichnessScore +
-    0.2 * phraseScore +
-    0.15 * contractionAbsenceScore;
+    0.35 * burstinessScoreAdj +
+    0.3 * phraseScore +
+    0.15 * lengthUniformityScoreAdj +
+    0.12 * vocabRichnessScoreAdj +
+    0.08 * contractionAbsenceScoreAdj;
 
   const aiScore = Math.round(clamp(aiScoreRaw, 0, 1) * 100);
 
   const sentenceAnalysis = trimmed.map((sentence, i) => {
-    const words = tokenizeWords(sentence);
-    const len = words.length;
-    const lengthDeviation = meanLength === 0 ? 0 : Math.abs(len - meanLength) / meanLength;
-    const lengthScore = clamp(1 - lengthDeviation, 0, 1);
-
     const lowerSentence = sentence.toLowerCase();
     const hasPhrase = AI_PHRASES.some((p) => lowerSentence.includes(p));
 
-    const sentenceContractions = (sentence.match(CONTRACTION_RE) || []).length;
-    const contractionScore = len > 6 && sentenceContractions === 0 ? 1 : 0;
+    // How close this sentence's "surprisal" sits to the document's mean,
+    // relative to the document's own spread — i.e. how unremarkable it is
+    // within this specific document, which is only meaningful once the
+    // document has enough sentences for that spread to mean something.
+    const deviation =
+      perplexityStdDev === 0 ? 0 : Math.abs(perplexities[i] - avgPerplexity) / perplexityStdDev;
+    const uniformityScore = clamp(1 - deviation, 0, 1);
+    const uniformityScoreAdj = damp(uniformityScore, statReliability);
 
     const raw =
-      0.35 * lengthScore +
-      0.35 * (hasPhrase ? 1 : 0) +
-      0.15 * contractionScore +
-      0.15 * (aiScore / 100);
+      0.45 * (hasPhrase ? 1 : 0) +
+      0.3 * uniformityScoreAdj +
+      0.25 * (aiScore / 100);
 
     const aiLikelihood = Math.round(clamp(raw, 0, 1) * 100);
 
